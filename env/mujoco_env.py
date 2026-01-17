@@ -12,12 +12,13 @@ import gym
 try:
     import mujoco_py
 except ImportError as e:
-    raise error.DependencyNotInstalled("You need to install mujoco_py (https://mujoco.org/)")
+    raise error.DependencyNotInstalled
 
 DEFAULT_SIZE = 500
 
 
 def convert_observation_to_space(observation):
+    # Convert an observation (ndarray or dict) into a gym.Space.
     if isinstance(observation, dict):
         space = spaces.Dict(OrderedDict([
             (key, convert_observation_to_space(value))
@@ -34,8 +35,7 @@ def convert_observation_to_space(observation):
 
 
 class MujocoEnv(gym.Env):
-    """Interface for MuJoCo environments.
-    """
+    # Base class for Mujoco environments.
 
     def __init__(self, frame_skip):
 
@@ -81,8 +81,7 @@ class MujocoEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    # methods to override:
-    # ----------------------------
+    # Methods to override
 
     def reset_model(self):
         """
@@ -92,11 +91,7 @@ class MujocoEnv(gym.Env):
         raise NotImplementedError
 
     def viewer_setup(self):
-        """
-        This method is called when the viewer is initialized.
-        Optionally implement this method, if you need to tinker with camera position
-        and so forth.
-        """
+        # Optionally configure viewer camera.
         pass
 
     # -----------------------------
@@ -107,6 +102,7 @@ class MujocoEnv(gym.Env):
         return ob
 
     def set_state(self, qpos, qvel):
+        # Set qpos and qvel states for MuJoCo sim.
         assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
         old_state = self.sim.get_state()
         new_state = mujoco_py.MjSimState(old_state.time, qpos, qvel,
