@@ -2,10 +2,8 @@
     REINFORCE and Actor-critic algorithms
 """
 import argparse
-
 import torch
 import gym
-
 from env.custom_hopper import *
 from agent import Agent, Policy
 
@@ -29,7 +27,8 @@ args = parse_args()
 def main():
 
     env = gym.make(args.env)
-
+    
+    # Print environment info
     print('Action space:', env.action_space)
     print('State space:', env.observation_space)
     env.reset()  # Ensure domain-specific parameters (e.g., masses) are set before printing
@@ -41,6 +40,7 @@ def main():
     observation_space_dim = env.observation_space.shape[-1]
     action_space_dim = env.action_space.shape[-1]
 
+    # Initialize policy and agent
     policy = Policy(observation_space_dim, action_space_dim)
     agent = Agent(policy,
                   device=args.device,
@@ -53,9 +53,9 @@ def main():
     for episode in range(args.n_episodes):
         done = False
         train_reward = 0
-        state = env.reset()  # Reset the environment and observe the initial state
+        state = env.reset()
 
-        while not done:  # Loop until the episode is over
+        while not done:
 
             action, action_log_prob = agent.get_action(state)
             previous_state = state
@@ -66,7 +66,7 @@ def main():
 
             train_reward += reward
 
-        # ---- POLICY UPDATE ----
+        # Update policy after each episode
         loss = agent.update_policy()
 
         if (episode + 1) % args.print_every == 0:
@@ -74,7 +74,7 @@ def main():
             print('Episode return:', train_reward)
             if loss is not None:
                 print('Loss:', loss)
-
+    # Save final trained policy
     torch.save(agent.policy.state_dict(), "model.mdl")
 
 
