@@ -12,10 +12,7 @@
                 - When exactly is the episode over?
                 - What is an action here?
 """
-import pdb
-
 import gym
-
 from env.custom_hopper import *
 
 
