@@ -1,9 +1,8 @@
 """Test an RL agent on the OpenAI Gym Hopper environment"""
-import argparse
 
+import argparse
 import torch
 import gym
-
 from env.custom_hopper import *
 from agent import Agent, Policy
 
@@ -31,6 +30,7 @@ def main():
 	observation_space_dim = env.observation_space.shape[-1]
 	action_space_dim = env.action_space.shape[-1]
 
+	# Initialize policy and load trained weights
 	policy = Policy(observation_space_dim, action_space_dim)
 	policy.load_state_dict(torch.load(args.model), strict=True)
 
