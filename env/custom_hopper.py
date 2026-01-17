@@ -4,7 +4,6 @@ domain randomization optimization.
 See more at: https://www.gymlibrary.dev/environments/mujoco/hopper/
 """
 from copy import deepcopy
-
 import numpy as np
 import gym
 from gym import utils
@@ -13,30 +12,37 @@ from .mujoco_env import MujocoEnv
 
 class CustomHopper(MujocoEnv, utils.EzPickle):
     def __init__(self, domain=None):
-        # Store which domain this env instance represents
+        """
+        domain: one of {None, "source", "target", "udr", "massdr",
+                         "frictiondr", "dampingdr", "extdr"}
+        """
+
+        # Domain identifier for this instance
         self.domain = domain
 
-        # Attributes that must exist before MujocoEnv.__init__ calls self.step()
-        # (step() uses action_noise_std when domain == "extdr")
+        # Used by 'extdr' to inject action noise (must exist before MujocoEnv.__init__)
         self.action_noise_std = 0.01
 
-        # Initialize base MuJoCo environment
+        # Initialize base MuJoCo environment (this may call step/reset internally)
         MujocoEnv.__init__(self, frame_skip=4)
         utils.EzPickle.__init__(self)
 
         # ---- Mass configurations ----
+        # Keep arrays as numpy arrays to support arithmetic
         self.target_masses = np.copy(self.sim.model.body_mass[1:])  # shape (4,)
 
         # Source masses: torso scaled by 0.7, others same as target
         self.source_masses = self.target_masses.copy()
         self.source_masses[0] *= 0.7  # -30% torso mass
 
-        # ---- UDR ranges for masses (only links 1,2,3) ----
+        # ---- UDR ranges for masses (only links 1,2,3 in your representation) ----
         scale = 0.3
+        
+        # udr_low/upr_high refer to the last 3 masses (exclude torso index 0)
         self.udr_low = self.source_masses[1:] * (1.0 - scale)
         self.udr_high = self.source_masses[1:] * (1.0 + scale)
 
-        # ---- Extended DR: nominal damping + friction ----
+        # ---- Extended DR: nominal damping + friction (saved to reset later) ----
         self.nominal_damping = np.copy(self.sim.model.dof_damping)
         self.nominal_friction = np.copy(self.sim.model.geom_friction)
 
@@ -55,8 +61,9 @@ class CustomHopper(MujocoEnv, utils.EzPickle):
         self.set_parameters(self.sample_parameters())
 
     def sample_parameters(self):
-        """Sample masses for UDR: torso fixed, other 3 links randomized."""
-        # Use self.np_random; seeded in MujocoEnv.__init__ via self.seed()
+        """
+        Sample masses for UDR: torso fixed, other 3 links randomized.
+        """
         masses = self.source_masses.copy()
         rand_rest = self.np_random.uniform(low=self.udr_low,
                                            high=self.udr_high)
