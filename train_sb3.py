@@ -8,11 +8,8 @@
 """
 
 import argparse
-import numpy as np
 import gym
-
 from env.custom_hopper import *  # registers CustomHopper environments
-
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -140,21 +137,14 @@ def main():
     else:
         raise NotImplementedError("Supported algorithms: ppo, sac")
 
-    # ---- 1.5. SAVE MODEL with a name depending on train-env ----
-    # Example:
-    #   CustomHopper-source-v0 -> suffix "source"  -> sac_hopper_source.zip
-    #   CustomHopper-udr-v0    -> suffix "udr"     -> sac_hopper_udr.zip
-    #   CustomHopper-extdr-v0  -> suffix "extdr"   -> sac_hopper_extdr.zip
-    #   CustomHopper-target-v0 -> suffix "target"  -> sac_hopper_target.zip
+   # ---- 2. SAVE MODEL ----
     suffix = args.train_env.replace("CustomHopper-", "").replace("-v0", "")
     save_name = f"{algo}_hopper_{suffix}"
     print(f"\nSaving model to: {save_name}.zip")
     model.save(save_name)
 
-    # ---- 2. Evaluate on TRAIN (source/udr/extdr/target) ----
+   # ---- 3. Evaluate on train and test envs ----
     evaluate_on_env(model, args.train_env, n_episodes=10)
-
-    # ---- 3. Evaluate on TARGET ----
     evaluate_on_env(model, args.test_env, n_episodes=10)
 
 
