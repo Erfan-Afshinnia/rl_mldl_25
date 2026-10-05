@@ -51,14 +51,14 @@ This allows systematic evaluation of how RL methods generalize when the environm
 
 ```bash
 .
-├── agent.py                     # REINFORCE and Actor-Critic implementation
-├── train.py                     # Training for REINFORCE / Actor-Critic
-├── train_sb3.py                 # PPO / SAC training with Stable-Baselines3
-├── test.py                      # Test a trained custom policy
-├── test_random_policy.py        # Explore the Hopper environment with random actions
+├── agent.py                     
+├── train.py                     
+├── train_sb3.py                 
+├── test.py                      
+├── test_random_policy.py        
 ├── env/
 │   ├── __init__.py
-│   ├── custom_hopper.py         # Custom Hopper domains and domain randomization
+│   ├── custom_hopper.py         
 │   └── mujoco_env.py
 ├── hparam_search/
 │   ├── hparam_results_partial.csv
