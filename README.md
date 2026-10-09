@@ -21,25 +21,26 @@ This controlled dynamics mismatch provides the basis for the sim-to-sim transfer
 
 Implemented in PyTorch:
 
-- **REINFORCE:** Monte Carlo discounted returns, optional constant baseline, and normalized advantages.
+- **REINFORCE:** Monte Carlo discounted returns, an optional constant baseline, and normalized advantages.
 - **Actor-Critic:** a learned state-value network, TD(0) targets, and advantage-based policy updates.
 - **Gaussian policy:** continuous-action distribution with a learned per-action standard deviation.
 
 ### Stable-Baselines3 Baselines
 
-The repository also implements training scripts for:
+The repository also supports:
 
 - **Proximal Policy Optimization (PPO)**
 - **Soft Actor-Critic (SAC)**
 
-The training script supports configurable training and evaluation environments and compares policy performance on the selected training and test domains.
+The Stable-Baselines3 training script supports configurable training and evaluation environments and evaluates policies on the selected training and test domains.
 
 ## Custom Domain-Randomization Environments
 
-The custom Hopper environment supports the following variants:
+The environment uses Gymnasium and the official MuJoCo Python bindings.
 
 | Environment | Configuration |
 |---|---|
+| `CustomHopper-v0` | Default target dynamics |
 | `CustomHopper-source-v0` | Source dynamics |
 | `CustomHopper-target-v0` | Target dynamics |
 | `CustomHopper-udr-v0` | Uniform randomization of non-torso body masses |
@@ -48,18 +49,92 @@ The custom Hopper environment supports the following variants:
 | `CustomHopper-dampingdr-v0` | Damping-only randomization |
 | `CustomHopper-extdr-v0` | Mass, damping, friction, and action noise |
 
-The extended randomization condition combines mass randomization with multiplicative damping and friction changes, together with Gaussian action noise. Separate ablation environments allow individual parameter groups to be studied.
+The extended randomization condition combines mass randomization with multiplicative damping and friction changes and Gaussian action noise. Separate ablation environments allow individual parameter groups to be studied.
+
+The observation contains 11 values: five position coordinates and six velocity coordinates. The action space contains three continuous controls bounded between -1 and 1. Registered environments have a maximum episode length of 500 steps.
+
+## Installation
+
+The working environment used for smoke tests was **Python 3.11.9 on Windows**. The pins in `requirements.txt` reflect the package versions tested in that environment.
+
+From the repository root, open PowerShell and run:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+To verify the installed dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip check
+```
+
+The project uses Gymnasium rather than legacy Gym and the official `mujoco` package rather than `mujoco-py`. The repository's Hopper XML has been converted to a format accepted by the tested MuJoCo version.
+
+## Running the Training Scripts
+
+Run commands from the repository root using the Python interpreter in `.venv`.
+
+### REINFORCE
+
+```powershell
+.\.venv\Scripts\python.exe train.py --algo reinforce --env CustomHopper-source-v0
+```
+
+### Actor-Critic
+
+```powershell
+.\.venv\Scripts\python.exe train.py --algo actor_critic --env CustomHopper-source-v0
+```
+
+Both custom algorithms save their final policy state dictionary to `model.mdl`.
+
+### PPO
+
+```powershell
+.\.venv\Scripts\python.exe train_sb3.py --algo ppo --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
+```
+
+### SAC
+
+```powershell
+.\.venv\Scripts\python.exe train_sb3.py --algo sac --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
+```
+
+The Stable-Baselines3 script saves the trained policy as a ZIP file and evaluates it on the training and test environments. TensorBoard logs are written to `ppo_hopper_tb/` or `sac_hopper_tb/`.
+
+For shorter training runs, use `--total-timesteps` to reduce the number of steps. The default device is CPU; `--device cuda` can be used with a compatible CUDA-enabled PyTorch installation.
+
+### Evaluate a Custom PyTorch Policy
+
+```powershell
+.\.venv\Scripts\python.exe test.py --model model.mdl --episodes 10 --env CustomHopper-source-v0
+```
+
+Replace the environment ID with `CustomHopper-target-v0` to evaluate in the target domain.
+
+### Test a Random Policy
+
+Run a few episodes without rendering:
+
+```powershell
+.\.venv\Scripts\python.exe test_random_policy.py --episodes 5 --seed 42
+```
+
+Add `--render` to request a human-rendered simulation.
 
 ## Experimental Design
 
 The project investigates:
 
-- Source-to-source performance
-- Source-to-target zero-shot transfer
-- Target-to-target reference performance
-- Transfer robustness under domain randomization
-- Mass, friction, and damping ablations
-- SAC hyperparameter sensitivity across multiple random seeds
+- Source-to-source performance.
+- Source-to-target zero-shot transfer.
+- Target-to-target reference performance.
+- Transfer robustness under domain randomization.
+- Mass, friction, and damping ablations.
+- SAC hyperparameter sensitivity across multiple random seeds.
 
 ### SAC Hyperparameter Search
 
@@ -115,55 +190,36 @@ rl_mldl_25/
 │   └── sac_robustness_barplot.png
 ├── GIF/
 │   └── hopper_udr_best.gif
-├── colab_starting_code.ipynb
 ├── requirements.txt
 └── README.md
 ```
 
-## Running the Training Scripts
+## Development and Tests
 
-The scripts expose the following command-line interfaces. They require a compatible environment for the repository's legacy Gym and MuJoCo dependencies.
+Install the runtime and development dependencies in your virtual environment:
 
-**REINFORCE**
-
-```bash
-python train.py --algo reinforce --env CustomHopper-source-v0
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-**Actor-Critic**
+Run the automated environment tests:
 
-```bash
-python train.py --algo actor_critic --env CustomHopper-source-v0
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-**PPO**
-
-```bash
-python train_sb3.py --algo ppo --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
-```
-
-**SAC**
-
-```bash
-python train_sb3.py --algo sac --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
-```
-
-**Evaluate a custom PyTorch policy**
-
-```bash
-python test.py --model model.mdl --episodes 10
-```
-
+The tests check the MuJoCo XML, all eight registered environment variants, the source-to-target torso-mass ratio, and reproducibility of extended domain randomization.
 ## Compatibility and Limitations
 
-- The experiments concern **sim-to-sim transfer**, not real-world or sim-to-real deployment.
-- The environment uses the legacy OpenAI Gym API and `mujoco-py`.
-- Installing these legacy dependencies may require a compatible Python version and native MuJoCo dependencies. The current dependency setup still needs to be validated on a clean environment.
+- The experiments concern **sim-to-sim transfer**, not real-world deployment or sim-to-real transfer.
+- The migrated environment uses Gymnasium's reset and step interfaces and the official MuJoCo Python bindings.
+- The converted XML's key physical properties were compared with the legacy model, and short simulation rollouts were close but not identical. Long-term trajectory equivalence has not been established.
+- Short smoke tests verified that the environment variants, custom training algorithms, PPO, SAC, and policy evaluation execute with the migrated setup. These checks do not establish convergence or benchmark-quality performance.
 - The hyperparameter-search results are partial and use two random seeds per configuration.
 
 ## Tech Stack
 
-**Python, PyTorch, NumPy, OpenAI Gym, MuJoCo, mujoco-py, Stable-Baselines3, PPO, SAC, REINFORCE, Actor-Critic, Domain Randomization**
+**Python, PyTorch, NumPy, Gymnasium, MuJoCo, Stable-Baselines3, PPO, SAC, REINFORCE, Actor-Critic, Domain Randomization**
 
 ## Author
 

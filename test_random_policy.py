@@ -1,46 +1,88 @@
-"""Test a random policy on the OpenAI Gym Hopper environment.
+"""Sanity-check the custom Hopper with a random policy."""
 
-    
-    TASK 1: Play around with this code to get familiar with the
-            Hopper environment.
+import argparse
 
-            For example:
-                - What is the state space in the Hopper environment? Is it discrete or continuous?
-                - What is the action space in the Hopper environment? Is it discrete or continuous?
-                - What is the mass value of each link of the Hopper environment, in the source and target variants respectively?
-                - what happens if you don't reset the environment even after the episode is over?
-                - When exactly is the episode over?
-                - What is an action here?
-"""
-import gym
-from env.custom_hopper import *
+import gymnasium as gym
+import numpy as np
+
+from env import custom_hopper  # Registers the custom environments.
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run a random policy in a Custom Hopper environment."
+    )
+    parser.add_argument(
+        "--env", default="CustomHopper-source-v0",
+        help="Registered environment ID.",
+    )
+    parser.add_argument(
+        "--episodes", type=int, default=5,
+        help="Number of episodes to run.",
+    )
+    parser.add_argument(
+        "--render", action="store_true",
+        help="Render the environment in a human viewer.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42,
+        help="Random seed.",
+    )
+    return parser.parse_args()
 
 
 def main():
-	env = gym.make('CustomHopper-source-v0')
-	# env = gym.make('CustomHopper-target-v0')
+    args = parse_args()
 
-	print('State space:', env.observation_space) # state-space
-	print('Action space:', env.action_space) # action-space
-	print('Dynamics parameters:', env.get_parameters()) # masses of each link of the Hopper
+    if args.episodes <= 0:
+        raise ValueError("--episodes must be greater than zero.")
 
-	n_episodes = 500
-	render = True
+    env = gym.make(
+        args.env,
+        render_mode="human" if args.render else None,
+    )
 
-	for episode in range(n_episodes):
-		done = False
-		state = env.reset()	# Reset environment to initial state
+    try:
+        observation, _ = env.reset(seed=args.seed)
+        env.action_space.seed(args.seed)
 
-		while not done:  # Until the episode is over
+        print("Environment:", args.env)
+        print("Observation space:", env.observation_space)
+        print("Action space:", env.action_space)
+        print("Dynamics parameters:", env.unwrapped.get_parameters())
 
-			action = env.action_space.sample()	# Sample random action
-		
-			state, reward, done, info = env.step(action)	# Step the simulator to the next timestep
+        for episode in range(args.episodes):
+            if episode > 0:
+                observation, _ = env.reset(seed=args.seed + episode)
 
-			if render:
-				env.render()
+            episode_return = 0.0
+            episode_length = 0
+            terminated = False
+            truncated = False
 
-	
+            while not (terminated or truncated):
+                action = env.action_space.sample()
+                observation, reward, terminated, truncated, info = env.step(
+                    action
+                )
 
-if __name__ == '__main__':
-	main()
+                episode_return += float(reward)
+                episode_length += 1
+
+                if args.render:
+                    env.render()
+
+            print(
+                f"Episode: {episode + 1} | "
+                f"Length: {episode_length} | "
+                f"Return: {episode_return:.2f} | "
+                f"Terminated: {terminated} | "
+                f"Truncated: {truncated}"
+            )
+
+    finally:
+        env.close()
+
+
+if __name__ == "__main__":
+    main()

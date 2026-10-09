@@ -1,59 +1,126 @@
-"""Test an RL agent on the OpenAI Gym Hopper environment"""
+"""Evaluate a custom REINFORCE or actor-critic Hopper policy."""
 
 import argparse
+from pathlib import Path
+
+import gymnasium as gym
+import numpy as np
 import torch
-import gym
-from env.custom_hopper import *
+
+from env import custom_hopper  # Registers the custom environments.
 from agent import Agent, Policy
 
+
 def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model', default=None, type=str, help='Model path')
-    parser.add_argument('--device', default='cpu', type=str, help='network device [cpu, cuda]')
-    parser.add_argument('--render', default=False, action='store_true', help='Render the simulator')
-    parser.add_argument('--episodes', default=10, type=int, help='Number of test episodes')
-
+    parser = argparse.ArgumentParser(
+        description="Evaluate a saved custom Hopper policy."
+    )
+    parser.add_argument(
+        "--model", default="model.mdl", type=str,
+        help="Path to a policy state_dict saved by train.py.",
+    )
+    parser.add_argument(
+        "--env", default="CustomHopper-source-v0", type=str,
+        help="Registered environment ID to evaluate.",
+    )
+    parser.add_argument(
+        "--device", default="cpu", type=str,
+        help="Network device, such as cpu or cuda.",
+    )
+    parser.add_argument(
+        "--render", action="store_true",
+        help="Render the simulation in a human viewer.",
+    )
+    parser.add_argument(
+        "--episodes", default=10, type=int,
+        help="Number of evaluation episodes.",
+    )
+    parser.add_argument(
+        "--seed", default=42, type=int,
+        help="Random seed for evaluation.",
+    )
     return parser.parse_args()
-
-args = parse_args()
 
 
 def main():
+    args = parse_args()
 
-	env = gym.make('CustomHopper-source-v0')
-	# env = gym.make('CustomHopper-target-v0')
+    if args.episodes <= 0:
+        raise ValueError("--episodes must be greater than zero.")
 
-	print('Action space:', env.action_space)
-	print('State space:', env.observation_space)
-	print('Dynamics parameters:', env.get_parameters())
-	
-	observation_space_dim = env.observation_space.shape[-1]
-	action_space_dim = env.action_space.shape[-1]
+    model_path = Path(args.model)
+    if not model_path.is_file():
+        raise FileNotFoundError(
+            f"Policy file not found: {model_path.resolve()}. "
+            "Train a custom policy first or specify --model."
+        )
 
-	# Initialize policy and load trained weights
-	policy = Policy(observation_space_dim, action_space_dim)
-	policy.load_state_dict(torch.load(args.model), strict=True)
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA was requested, but CUDA is not available. "
+            "Use --device cpu or configure a CUDA-enabled PyTorch installation."
+        )
 
-	agent = Agent(policy, device=args.device)
+    env = gym.make(
+        args.env,
+        render_mode="human" if args.render else None,
+    )
 
-	for episode in range(args.episodes):
-		done = False
-		test_reward = 0
-		state = env.reset()
+    try:
+        state, _ = env.reset(seed=args.seed)
+        env.action_space.seed(args.seed)
 
-		while not done:
+        print("Action space:", env.action_space)
+        print("Observation space:", env.observation_space)
+        print("Dynamics parameters:", env.unwrapped.get_parameters())
 
-			action, _ = agent.get_action(state, evaluation=True)
+        policy = Policy(
+            env.observation_space.shape[-1],
+            env.action_space.shape[-1],
+        )
+        state_dict = torch.load(
+            model_path,
+            map_location="cpu",
+            weights_only=True,
+        )
+        policy.load_state_dict(state_dict, strict=True)
 
-			state, reward, done, info = env.step(action.detach().cpu().numpy())
+        agent = Agent(policy, device=args.device)
 
-			if args.render:
-				env.render()
+        for episode in range(args.episodes):
+            if episode > 0:
+                state, _ = env.reset(seed=args.seed + episode)
 
-			test_reward += reward
+            episode_done = False
+            episode_return = 0.0
 
-		print(f"Episode: {episode} | Return: {test_reward}")
-	
+            while not episode_done:
+                with torch.no_grad():
+                    action, _ = agent.get_action(state, evaluation=True)
 
-if __name__ == '__main__':
-	main()
+                action_np = action.detach().cpu().numpy()
+                action_np = np.clip(
+                    action_np,
+                    env.action_space.low,
+                    env.action_space.high,
+                )
+
+                state, reward, terminated, truncated, info = env.step(action_np)
+
+                if args.render:
+                    env.render()
+
+                episode_return += float(reward)
+                episode_done = terminated or truncated
+
+            print(
+                f"Episode: {episode + 1} | "
+                f"Return: {episode_return:.2f}"
+            )
+
+    finally:
+        env.close()
+
+
+if __name__ == "__main__":
+    main()
