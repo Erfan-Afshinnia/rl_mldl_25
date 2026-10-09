@@ -1,73 +1,170 @@
 # Robust Reinforcement Learning for Sim-to-Sim Transfer in MuJoCo Hopper
 
-This project studies **robust robotic control with Reinforcement Learning (RL)** under **dynamics mismatch** using the **MuJoCo Hopper** environment.  
-The main goal is to understand how well RL policies trained in one simulated domain transfer to another domain with different physical dynamics, and whether **domain randomization** can improve robustness.
+A reinforcement learning study of **robust control under dynamics mismatch** using a custom MuJoCo Hopper environment.
 
-The project includes:
-- custom Hopper environments for **source**, **target**, and randomized domains
-- implementations of **REINFORCE** and **Actor-Critic**
-- stronger baselines using **PPO** and **SAC** from Stable-Baselines3
-- experiments on **sim-to-sim transfer**
-- **Uniform Domain Randomization (UDR)** and **Extended Domain Randomization (extDR)** ablations
+The project investigates how policies trained in one simulated domain transfer to another domain with different physical dynamics, and whether **domain randomization** improves transfer robustness. It combines from-scratch policy-gradient implementations in PyTorch with PPO and SAC baselines from Stable-Baselines3.
 
----
+## Research Question
 
-## Project Overview
+How does a change in simulated dynamics affect reinforcement learning performance, and can domain randomization improve zero-shot transfer between environments?
 
-A major challenge in robotics is the **reality gap**: a policy may perform well in simulation but fail when the dynamics change.  
-To study this in a controlled way, this project creates a **source domain** and a **target domain** in MuJoCo Hopper.
+The custom environment defines source and target domains with different torso masses:
 
-The key dynamics mismatch is:
+- **Source domain:** the torso mass is scaled to 70% of the target-domain value.
+- **Target domain:** uses the original torso mass from the MuJoCo model.
 
-- the **target domain torso mass is 30% higher** than the source domain
+This controlled dynamics mismatch provides the basis for the sim-to-sim transfer experiments.
 
-This allows systematic evaluation of how RL methods generalize when the environment changes. The project then studies whether training with randomized dynamics can improve transfer robustness. 
+## Methods
 
----
+### From-Scratch Reinforcement Learning
 
-## Main Contributions
+Implemented in PyTorch:
 
-- Implemented **REINFORCE** with optional constant baseline
-- Implemented **Actor-Critic** with a learned value function
-- Trained **PPO** and **SAC** baselines using Stable-Baselines3
-- Built custom Hopper domains:
-  - `CustomHopper-source-v0`
-  - `CustomHopper-target-v0`
-  - `CustomHopper-udr-v0`
-  - `CustomHopper-massdr-v0`
-  - `CustomHopper-frictiondr-v0`
-  - `CustomHopper-dampingdr-v0`
-  - `CustomHopper-extdr-v0`
-- Evaluated **zero-shot transfer** from source to target
-- Studied the effect of:
-  - UDR randomization ranges
-  - friction-only randomization
-  - damping-only randomization
-  - full extended DR with action noise
+- **REINFORCE:** Monte Carlo discounted returns, optional constant baseline, and normalized advantages.
+- **Actor-Critic:** a learned state-value network, TD(0) targets, and advantage-based policy updates.
+- **Gaussian policy:** continuous-action distribution with a learned per-action standard deviation.
 
----
+### Stable-Baselines3 Baselines
+
+The repository also implements training scripts for:
+
+- **Proximal Policy Optimization (PPO)**
+- **Soft Actor-Critic (SAC)**
+
+The training script supports configurable training and evaluation environments and compares policy performance on the selected training and test domains.
+
+## Custom Domain-Randomization Environments
+
+The custom Hopper environment supports the following variants:
+
+| Environment | Configuration |
+|---|---|
+| `CustomHopper-source-v0` | Source dynamics |
+| `CustomHopper-target-v0` | Target dynamics |
+| `CustomHopper-udr-v0` | Uniform randomization of non-torso body masses |
+| `CustomHopper-massdr-v0` | Mass-only ablation |
+| `CustomHopper-frictiondr-v0` | Friction-only randomization |
+| `CustomHopper-dampingdr-v0` | Damping-only randomization |
+| `CustomHopper-extdr-v0` | Mass, damping, friction, and action noise |
+
+The extended randomization condition combines mass randomization with multiplicative damping and friction changes, together with Gaussian action noise. Separate ablation environments allow individual parameter groups to be studied.
+
+## Experimental Design
+
+The project investigates:
+
+- Source-to-source performance
+- Source-to-target zero-shot transfer
+- Target-to-target reference performance
+- Transfer robustness under domain randomization
+- Mass, friction, and damping ablations
+- SAC hyperparameter sensitivity across multiple random seeds
+
+### SAC Hyperparameter Search
+
+The available results cover a **partial search** of four SAC configurations, with two seeds per configuration. Each run used 50,000 training steps and 10 evaluation episodes.
+
+The best-performing tested configuration by mean return was:
+
+| Parameter | Value |
+|---|---:|
+| Learning rate | `0.0001` |
+| Batch size | `256` |
+| Mean return across seeds | `339.03` |
+| Standard deviation across seeds | `28.35` |
+
+These results describe the configurations tested so far; they should not be interpreted as an exhaustive search or a guarantee of performance in other conditions. The result tables are in `hparam_search/`.
+
+## Results and Visualizations
+
+### PPO Baseline Comparison
+
+![PPO baseline comparison](Bar%20Plots/ppo_baselines_barplot.png)
+
+### SAC Robustness Comparison
+
+![SAC robustness comparison](Bar%20Plots/sac_robustness_barplot.png)
+
+### Simulation Demonstration
+
+The repository includes an animation of a trained Hopper policy in a randomized environment.
+
+![UDR Hopper simulation](GIF/hopper_udr_best.gif)
 
 ## Repository Structure
 
-```bash
-.
-├── agent.py                     
-├── train.py                     
-├── train_sb3.py                 
-├── test.py                      
-├── test_random_policy.py        
+```text
+rl_mldl_25/
+├── agent.py
+├── train.py
+├── train_sb3.py
+├── test.py
+├── test_random_policy.py
 ├── env/
 │   ├── __init__.py
-│   ├── custom_hopper.py         
-│   └── mujoco_env.py
+│   ├── custom_hopper.py
+│   ├── mujoco_env.py
+│   └── assets/
+│       └── hopper.xml
 ├── hparam_search/
 │   ├── hparam_results_partial.csv
 │   └── hparam_summary_partial.csv
-├── GIF/
-│   └── hopper_udr_best.gif
 ├── Bar Plots/
 │   ├── ppo_baselines_barplot.png
 │   └── sac_robustness_barplot.png
+├── GIF/
+│   └── hopper_udr_best.gif
 ├── colab_starting_code.ipynb
 ├── requirements.txt
 └── README.md
+```
+
+## Running the Training Scripts
+
+The scripts expose the following command-line interfaces. They require a compatible environment for the repository's legacy Gym and MuJoCo dependencies.
+
+**REINFORCE**
+
+```bash
+python train.py --algo reinforce --env CustomHopper-source-v0
+```
+
+**Actor-Critic**
+
+```bash
+python train.py --algo actor_critic --env CustomHopper-source-v0
+```
+
+**PPO**
+
+```bash
+python train_sb3.py --algo ppo --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
+```
+
+**SAC**
+
+```bash
+python train_sb3.py --algo sac --train-env CustomHopper-source-v0 --test-env CustomHopper-target-v0 --total-timesteps 200000
+```
+
+**Evaluate a custom PyTorch policy**
+
+```bash
+python test.py --model model.mdl --episodes 10
+```
+
+## Compatibility and Limitations
+
+- The experiments concern **sim-to-sim transfer**, not real-world or sim-to-real deployment.
+- The environment uses the legacy OpenAI Gym API and `mujoco-py`.
+- Installing these legacy dependencies may require a compatible Python version and native MuJoCo dependencies. The current dependency setup still needs to be validated on a clean environment.
+- The hyperparameter-search results are partial and use two random seeds per configuration.
+
+## Tech Stack
+
+**Python, PyTorch, NumPy, OpenAI Gym, MuJoCo, mujoco-py, Stable-Baselines3, PPO, SAC, REINFORCE, Actor-Critic, Domain Randomization**
+
+## Author
+
+**Erfan Afshinnia**
