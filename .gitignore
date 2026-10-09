@@ -1,5 +1,30 @@
+# Python bytecode and caches
 *.pyc
-__pycache__
-*/__pycache__
-*egg-info
-*/pycache
+__pycache__/
+**/__pycache__/
+*.egg-info/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Local Python environments
+.venv/
+venv/
+
+# Custom RL model outputs
+model.mdl
+*_hopper_*.zip
+
+# TensorBoard training logs
+ppo_hopper_tb/
+sac_hopper_tb/
+
+# Local hyperparameter-search checkpoints
+hparam_search/models/
+
+# Local editor settings
+.vscode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
