@@ -7,7 +7,7 @@ from gymnasium import spaces
 import mujoco
 import numpy as np
 
-DEFAULT_SIZE = 500
+DEFAULT_SIZE = 480
 
 
 def convert_observation_to_space(observation):
@@ -138,10 +138,11 @@ class MujocoEnv(gym.Env):
 
         if mode == "human":
             if self.viewer is None:
-                import mujoco.viewer
-                self.viewer = mujoco.viewer.launch_passive(
+                from mujoco import viewer
+                self.viewer = viewer.launch_passive(
                     self.model, self.data
                 )
+                self.viewer_setup()
             self.viewer.sync()
             return None
 

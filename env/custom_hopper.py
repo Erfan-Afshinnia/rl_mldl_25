@@ -23,24 +23,37 @@ class CustomHopper(MujocoEnv, EzPickle):
     """Hopper with source, target, and randomized physics domains."""
 
     VALID_DOMAINS = {
-        None, "source", "target", "udr", "massdr",
+        None, "source", "target", "udr", "massdr", "transferdr",
         "frictiondr", "dampingdr", "extdr",
     }
 
-    def __init__(self, domain=None, render_mode=None):
+    def __init__(self, domain=None, render_mode=None, reward_mode="standard"):
         if domain not in self.VALID_DOMAINS:
             raise ValueError(
                 f"Unknown domain {domain!r}. "
                 f"Choose one of {self.VALID_DOMAINS}."
             )
 
+        if reward_mode not in ("standard", "posture", "posture_height"):
+            raise ValueError(
+                f"Unknown reward mode {reward_mode!r}; use 'standard', 'posture', or 'posture_height'."
+            )
+
         self.domain = domain
+        self.reward_mode = reward_mode
         self.action_noise_std = 0.01
 
         super().__init__(frame_skip=4, render_mode=render_mode)
-        EzPickle.__init__(self, domain=domain, render_mode=render_mode)
+        EzPickle.__init__(self, domain=domain, render_mode=render_mode, reward_mode=reward_mode)
 
         self.target_masses = self.model.body_mass[1:].copy()
+
+        # Posture-reward reference and scales. The standard reward is unchanged.
+        self.desired_height = float(self.init_qpos[1])
+        self.height_penalty_weight = 0.5
+        if self.reward_mode == "posture_height":
+            self.height_penalty_weight = 2.0
+        self.angle_penalty_weight = 0.5
 
         self.source_masses = self.target_masses.copy()
         self.source_masses[0] *= 0.7
@@ -105,6 +118,13 @@ class CustomHopper(MujocoEnv, EzPickle):
         reward += 1.0
         reward -= 1e-3 * np.square(action).sum()
 
+        if self.reward_mode in ("posture", "posture_height"):
+            # Normalize deviations so the penalty has a meaningful scale.
+            height_error = (height - self.desired_height) / 0.25
+            angle_error = angle / 0.2
+            reward -= self.height_penalty_weight * height_error**2
+            reward -= self.angle_penalty_weight * angle_error**2
+
         state = self.state_vector()
         terminated = not (
             np.isfinite(state).all()
@@ -142,6 +162,14 @@ class CustomHopper(MujocoEnv, EzPickle):
 
         elif self.domain == "source":
             self.set_parameters(self.source_masses)
+
+        elif self.domain == "transferdr":
+            # Randomize torso mass across the source-to-target interval.
+            masses = self.target_masses.copy()
+            masses[0] = rng.uniform(
+                self.source_masses[0], self.target_masses[0]
+            )
+            self.set_parameters(masses)
 
         elif self.domain in ("udr", "massdr"):
             self.set_random_parameters()
@@ -187,12 +215,19 @@ class CustomHopper(MujocoEnv, EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the Hopper camera when human rendering is enabled."""
+        """Configure a wide tracking view of the complete Hopper."""
         if self.viewer is not None:
-            self.viewer.cam.trackbodyid = 2
-            self.viewer.cam.distance = self.model.stat.extent * 0.75
-            self.viewer.cam.lookat[2] = 1.15
+            torso_id = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_BODY, "torso"
+            )
+            self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            self.viewer.cam.trackbodyid = torso_id
+            self.viewer.cam.distance = max(
+                3.0, self.model.stat.extent * 2.0
+            )
+            self.viewer.cam.lookat[:] = self.data.xpos[torso_id]
             self.viewer.cam.elevation = -20
+            self.viewer.cam.azimuth = 90
 
     def set_mujoco_state(self, state):
         """Set state from the legacy 11-value environment-state vector."""
@@ -243,4 +278,31 @@ for env_id, domain in _ENVIRONMENTS.items():
             entry_point="env.custom_hopper:CustomHopper",
             max_episode_steps=500,
             kwargs=kwargs,
+        )
+
+# Separate experimental environments with posture-aware reward shaping.
+for env_id, domain in (
+    ("CustomHopper-source-posture-v0", "source"),
+    ("CustomHopper-target-posture-v0", "target"),
+    ("CustomHopper-transferdr-posture-v0", "transferdr"),
+):
+    if env_id not in registry:
+        register(
+            id=env_id,
+            entry_point="env.custom_hopper:CustomHopper",
+            max_episode_steps=500,
+            kwargs={"domain": domain, "reward_mode": "posture"},
+        )
+
+# Stronger height-penalty experiment; original environments stay unchanged.
+for env_id, domain in (
+    ("CustomHopper-transferdr-heightposture-v0", "transferdr"),
+    ("CustomHopper-target-heightposture-v0", "target"),
+):
+    if env_id not in registry:
+        register(
+            id=env_id,
+            entry_point="env.custom_hopper:CustomHopper",
+            max_episode_steps=500,
+            kwargs={"domain": domain, "reward_mode": "posture_height"},
         )
