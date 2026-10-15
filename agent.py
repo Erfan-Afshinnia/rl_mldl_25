@@ -31,10 +31,14 @@ class Policy(torch.nn.Module):
         self.fc2_actor = torch.nn.Linear(self.hidden, self.hidden)
         self.fc3_actor_mean = torch.nn.Linear(self.hidden, action_space)
         
-        # Learned standard deviation for exploration at training time 
+        # Learn a positive standard deviation through softplus.
+        # Initialize the effective standard deviation to exactly 0.5.
         self.sigma_activation = F.softplus
         init_sigma = 0.5
-        self.sigma = torch.nn.Parameter(torch.zeros(self.action_space)+init_sigma)
+        raw_init_sigma = torch.log(torch.expm1(torch.tensor(init_sigma))).item()
+        self.sigma = torch.nn.Parameter(
+            torch.full((self.action_space,), raw_init_sigma)
+        )
 
 
         """
@@ -50,12 +54,15 @@ class Policy(torch.nn.Module):
 
 
     def init_weights(self):
-        # Initialize linear layers with a standard normal for weights and zero bias.
-        # Using isinstance(...) is preferred to type(...) checks.
-        for m in self.modules():
-            if type(m) is torch.nn.Linear:
-                torch.nn.init.normal_(m.weight)
-                torch.nn.init.zeros_(m.bias)
+        # Xavier initialization helps keep hidden-layer activations controlled.
+        for module in self.modules():
+            if isinstance(module, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                torch.nn.init.zeros_(module.bias)
+
+        # Start with small action means to avoid immediate actuator saturation.
+        torch.nn.init.uniform_(self.fc3_actor_mean.weight, -3e-3, 3e-3)
+        torch.nn.init.uniform_(self.fc3_actor_mean.bias, -3e-3, 3e-3)
 
 
     def forward(self, x):
@@ -74,7 +81,7 @@ class Policy(torch.nn.Module):
         """
             Critic Forward
         """
-        # TASK 3: forward in the critic network
+
         x_critic = self.tanh(self.fc1_critic(x))
         x_critic = self.tanh(self.fc2_critic(x_critic))
         state_value = self.fc3_critic_value(x_critic).squeeze(-1)  # shape: [batch] or []
@@ -115,28 +122,20 @@ class Agent(object):
         self.states, self.next_states, self.action_log_probs, self.rewards, self.done = [], [], [], [], []
 
         if self.algorithm == 'reinforce':
-            #
-            # TASK 2:
-            #   - compute discounted returns
-            #   - compute policy gradient loss function given actions and returns
-            #   - compute gradients and step the optimizer
-            #
 
             # Monte Carlo returns
             returns = discount_rewards(rewards, self.gamma)  # shape: [T]
 
-            # Optional constant baseline
+            # Optional constant baseline.
+            # Do not normalize after subtracting a constant: standardization
+            # would cancel the baseline and make it ineffective.
             if self.baseline_value is not None:
                 advantages = returns - self.baseline_value
             else:
                 advantages = returns
 
-            # Normalize advantages (numerical stability epsilon)
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
             # REINFORCE policy gradient loss
             policy_loss = -(action_log_probs * advantages).sum()
-
             # 5. Backpropagation and optimizer step
             self.optimizer.zero_grad()
             policy_loss.backward()
@@ -145,13 +144,6 @@ class Agent(object):
             return policy_loss.item()
 
         elif self.algorithm == 'actor_critic':
-            #
-            # TASK 3:
-            #   - compute bootstrapped discounted return estimates
-            #   - compute advantage terms
-            #   - compute actor loss and critic loss
-            #   - compute gradients and step the optimizer
-            #
 
             # Get value estimates
             _, values = self.policy(states)          # shape: [T]
@@ -164,7 +156,9 @@ class Agent(object):
             advantages = targets - values
 
             # Normalize advantages
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages = (advantages - advantages.mean()) / (
+                advantages.std(unbiased=False) + 1e-8
+            )
 
             # Actor and critic losses
             actor_loss = -(action_log_probs * advantages.detach()).sum()
@@ -190,14 +184,21 @@ class Agent(object):
         normal_dist, state_value = self.policy(x)
 
         if evaluation:
-            return normal_dist.mean, None
+            # Deterministic actions must respect the environment action bounds.
+            return torch.tanh(normal_dist.mean), None
 
-        else:
-            action = normal_dist.sample()
-            # log_prob returns per-dimension log densities: sum gives joint log-prob
-            action_log_prob = normal_dist.log_prob(action).sum()
+        # Sample in unconstrained space, then squash into (-1, 1).
+        raw_action = normal_dist.sample()
+        action = torch.tanh(raw_action)
 
-            return action, action_log_prob
+        # Change-of-variables correction for the tanh transformation:
+        # log pi(a) = log N(raw_action) - sum(log(1 - tanh(raw_action)^2)).
+        log_prob_correction = torch.log(1.0 - action.pow(2) + 1e-6)
+        action_log_prob = (
+            normal_dist.log_prob(raw_action) - log_prob_correction
+        ).sum()
+
+        return action, action_log_prob
 
 
     def store_outcome(self, state, next_state, action_log_prob, reward, done):

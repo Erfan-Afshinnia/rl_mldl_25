@@ -6,6 +6,7 @@ import gymnasium as gym
 from env import custom_hopper  # Registers the custom environments.
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 
@@ -63,12 +64,20 @@ def train_sac(
     device: str = "cpu",
     n_envs: int = 1,
     seed: int = 42,
+    learning_rate: float | None = None,
+    batch_size: int | None = None,
 ):
     print(f"Creating SAC training environment: {train_env_id}")
     vec_env = make_vec_env(train_env_id, n_envs=n_envs, seed=seed)
 
     print("Observation space:", vec_env.observation_space)
     print("Action space:", vec_env.action_space)
+
+    sac_kwargs = {}
+    if learning_rate is not None:
+        sac_kwargs["learning_rate"] = learning_rate
+    if batch_size is not None:
+        sac_kwargs["batch_size"] = batch_size
 
     model = SAC(
         "MlpPolicy",
@@ -77,6 +86,7 @@ def train_sac(
         device=device,
         seed=seed,
         tensorboard_log="./sac_hopper_tb/",
+        **sac_kwargs,
     )
 
     try:
@@ -90,10 +100,10 @@ def train_sac(
     return model
 
 
-def evaluate_on_env(model, env_id: str, n_episodes: int = 10):
+def evaluate_on_env(model, env_id: str, n_episodes: int = 50):
     """Evaluate a trained model on a standard Gymnasium environment."""
     print(f"\nEvaluating policy on environment: {env_id}")
-    eval_env = gym.make(env_id)
+    eval_env = Monitor(gym.make(env_id))
 
     try:
         mean_reward, std_reward = evaluate_policy(
@@ -141,6 +151,18 @@ def parse_args():
         "--seed", type=int, default=42,
         help="Random seed for training.",
     )
+    parser.add_argument(
+        "--eval-episodes", type=int, default=50,
+        help="Number of episodes for each evaluation.",
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=None,
+        help="Optional SAC learning rate; omitted uses the SB3 default.",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=None,
+        help="Optional SAC batch size; omitted uses the SB3 default.",
+    )
     return parser.parse_args()
 
 
@@ -149,9 +171,18 @@ def main():
 
     if args.total_timesteps <= 0:
         raise ValueError("--total-timesteps must be greater than zero.")
+    if args.learning_rate is not None and args.learning_rate <= 0:
+        raise ValueError("--learning-rate must be greater than zero.")
+    if args.batch_size is not None and args.batch_size <= 0:
+        raise ValueError("--batch-size must be greater than zero.")
 
     trainers = {"ppo": train_ppo, "sac": train_sac}
     trainer = trainers[args.algo]
+
+    trainer_kwargs = {}
+    if args.algo == "sac":
+        trainer_kwargs["learning_rate"] = args.learning_rate
+        trainer_kwargs["batch_size"] = args.batch_size
 
     model = trainer(
         train_env_id=args.train_env,
@@ -159,6 +190,7 @@ def main():
         device=args.device,
         n_envs=1,
         seed=args.seed,
+        **trainer_kwargs,
     )
 
     suffix = (
@@ -170,8 +202,8 @@ def main():
     model.save(save_name)
 
     try:
-        evaluate_on_env(model, args.train_env, n_episodes=10)
-        evaluate_on_env(model, args.test_env, n_episodes=10)
+        evaluate_on_env(model, args.train_env, n_episodes=args.eval_episodes)
+        evaluate_on_env(model, args.test_env, n_episodes=args.eval_episodes)
     finally:
         if model.get_env() is not None:
             model.get_env().close()

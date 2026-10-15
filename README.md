@@ -21,9 +21,9 @@ This controlled dynamics mismatch provides the basis for the sim-to-sim transfer
 
 Implemented in PyTorch:
 
-- **REINFORCE:** Monte Carlo discounted returns, an optional constant baseline, and normalized advantages.
+- **REINFORCE:** Monte Carlo discounted returns, with an optional constant baseline.
 - **Actor-Critic:** a learned state-value network, TD(0) targets, and advantage-based policy updates.
-- **Gaussian policy:** continuous-action distribution with a learned per-action standard deviation.
+- **Gaussian policy:** tanh-squashed Gaussian actions with a learned per-action standard deviation and the corresponding log-probability correction, keeping actions within the environment bounds.
 
 ### Stable-Baselines3 Baselines
 
@@ -115,6 +115,18 @@ For shorter training runs, use `--total-timesteps` to reduce the number of steps
 
 Replace the environment ID with `CustomHopper-target-v0` to evaluate in the target domain.
 
+### Evaluate a Saved PPO/SAC Model
+
+Use `evaluate_saved_models.py` to evaluate an existing Stable-Baselines3 model without retraining it. The script records per-episode results as CSV files.
+
+For example, evaluate the saved source SAC model on both source and target environments for 50 episodes:
+
+```powershell
+.\.venv\Scripts\python.exe evaluate_saved_models.py --model sac_hopper_source_default_backup.zip --algo sac --envs CustomHopper-source-v0 CustomHopper-target-v0 --episodes 50 --seed 1000 --output-dir results/sb3_eval
+```
+
+Replace the model path and `--algo` value to evaluate a different saved PPO or SAC model. The model must already exist at the specified path.
+
 ### Test a Random Policy
 
 Run a few episodes without rendering:
@@ -171,29 +183,33 @@ The repository includes an animation of a trained Hopper policy in a randomized 
 
 ```text
 rl_mldl_25/
-├── agent.py
-├── train.py
-├── train_sb3.py
-├── test.py
-├── test_random_policy.py
-├── env/
-│   ├── __init__.py
-│   ├── custom_hopper.py
-│   ├── mujoco_env.py
-│   └── assets/
-│       └── hopper.xml
-├── hparam_search/
-│   ├── hparam_results_partial.csv
-│   └── hparam_summary_partial.csv
-├── Bar Plots/
-│   ├── ppo_baselines_barplot.png
-│   └── sac_robustness_barplot.png
-├── GIF/
-│   └── hopper_udr_best.gif
-├── requirements.txt
-└── README.md
+|-- agent.py
+|-- train.py
+|-- train_sb3.py
+|-- evaluate_saved_models.py
+|-- test.py
+|-- test_random_policy.py
+|-- env/
+|   |-- __init__.py
+|   |-- custom_hopper.py
+|   |-- mujoco_env.py
+|   `-- assets/hopper.xml
+|-- tests/
+|   |-- test_custom_hopper.py
+|   `-- test_agent.py
+|-- hparam_search/
+|   |-- hparam_results_partial.csv
+|   `-- hparam_summary_partial.csv
+|-- results/
+|   |-- experiment_summary.md
+|   |-- custom policy-gradient training/evaluation CSVs
+|   `-- sb3_eval/ (50-episode evaluation CSVs)
+|-- Bar Plots/
+|-- GIF/
+|-- requirements.txt
+|-- requirements-dev.txt
+`-- README.md
 ```
-
 ## Development and Tests
 
 Install the runtime and development dependencies in your virtual environment:
@@ -208,7 +224,17 @@ Run the automated environment tests:
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-The tests check the MuJoCo XML, all eight registered environment variants, the source-to-target torso-mass ratio, and reproducibility of extended domain randomization.
+The test suite checks the MuJoCo XML, all thirteen registered environment variants, source and target torso-mass properties, domain-randomization bounds and reproducibility, and the custom REINFORCE and Actor-Critic implementations.
+
+## Experimental Findings
+
+- In the corrected from-scratch experiments, REINFORCE with a constant baseline achieved the highest mean return over the final 100 training episodes across the two tested seeds. Actor-Critic had the shortest mean training time.
+- In the 50-episode deterministic evaluations, all corrected custom policy-gradient policies terminated before reaching the 500-step limit. The baseline effect differed by seed, so these results do not establish a universally best algorithm.
+- The partial SAC search favored learning rate `0.0001` and batch size `256` at 50,000 timesteps among the four tested configurations. The longer validation run did not outperform the recorded original default SAC baseline.
+- The regenerated 50-episode UDR evaluation obtained a target mean reward of 901.44 +/- 25.59, compared with 686.63 +/- 2.60 for the default source-SAC backup evaluated on target. This is a difference in observed means, not proof that UDR is universally better; UDR performance varies across domains. Historical and regenerated evaluation batches remain separate.
+- An additional UDR mass-range screen (seed 42, 50,000 training timesteps, 10 target episodes per configuration) tested +/-10%, +/-30%, and +/-50% ranges and obtained mean target rewards of 142.38, 382.45, and 354.57, respectively. The +/-30% setting had the highest observed mean in this preliminary single-seed screen, but all 30 episodes terminated before 500 steps. These shorter runs should not be compared directly with the main 200,000-step UDR evaluation.
+- The extension policy reached the 500-step time limit in 99 of 100 regenerated source/target evaluation episodes. This supports sustained locomotion in those tested conditions, not universal robustness.
+
 ## Compatibility and Limitations
 
 - The experiments concern **sim-to-sim transfer**, not real-world deployment or sim-to-real transfer.

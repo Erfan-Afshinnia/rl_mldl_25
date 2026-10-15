@@ -17,6 +17,11 @@ ENV_IDS = [
     "CustomHopper-frictiondr-v0",
     "CustomHopper-dampingdr-v0",
     "CustomHopper-extdr-v0",
+    "CustomHopper-source-posture-v0",
+    "CustomHopper-target-posture-v0",
+    "CustomHopper-transferdr-posture-v0",
+    "CustomHopper-transferdr-heightposture-v0",
+    "CustomHopper-target-heightposture-v0",
 ]
 
 
@@ -95,5 +100,23 @@ def test_extdr_reset_is_reproducible():
         np.testing.assert_allclose(masses_1, env.get_parameters())
         np.testing.assert_allclose(damping_1, env.model.dof_damping)
         np.testing.assert_allclose(friction_1, env.model.geom_friction)
+    finally:
+        env.close()
+
+def test_udr_preserves_source_torso_and_bounds_other_masses():
+    env = CustomHopper(domain="udr")
+
+    try:
+        for seed in range(10):
+            env.reset(seed=seed)
+            masses = env.get_parameters()
+
+            # Torso mass remains fixed at the source value.
+            assert masses[0] == pytest.approx(env.source_masses[0])
+
+            # Each of the other three masses stays within ±30%
+            # of its corresponding source mass.
+            assert np.all(masses[1:] >= env.udr_low)
+            assert np.all(masses[1:] <= env.udr_high)
     finally:
         env.close()

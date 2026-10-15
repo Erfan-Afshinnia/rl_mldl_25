@@ -28,3 +28,11 @@ hparam_search/models/
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Local test-only and timing-snapshot artifacts
+results/*_evalprep.csv
+results/save_path_smoke_test.*
+results/sb3_eval_smoke/
+
+# Keep exploratory UDR screening checkpoints local; CSV evidence remains tracked.
+results/udr_distribution_screen_20261015/*.zip
