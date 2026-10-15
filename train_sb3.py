@@ -1,39 +1,39 @@
-"""Sample script for training a control policy on the Hopper environment
-   using stable-baselines3.
-
-   TASK 4 & 5:
-   - Train an RL policy (PPO or SAC) on the CustomHopper-source-v0 environment.
-   - Evaluate the policy on source (lower bound) and target (sim-to-real transfer).
-   - Optionally train directly on target to get an upper bound baseline.
-"""
+"""Train and evaluate PPO or SAC on the custom Hopper environments."""
 
 import argparse
-import gym
-from env.custom_hopper import *  # registers CustomHopper environments
+
+import gymnasium as gym
+from env import custom_hopper  # Registers the custom environments.
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 
 def make_vec_env(env_id: str, n_envs: int = 1, seed: int = 0):
-    """Create a stable-baselines3-compatible vectorized environment."""
-    def _make_env():
+    """Create vectorized Gymnasium environments with reproducible seeds."""
+
+    def make_one(rank):
         def _init():
             env = gym.make(env_id)
-            env.seed(seed)
+            env.action_space.seed(seed + rank)
             return env
         return _init
 
-    return DummyVecEnv([_make_env() for _ in range(n_envs)])
+    vec_env = DummyVecEnv([make_one(rank) for rank in range(n_envs)])
+    vec_env.seed(seed)
+    return vec_env
 
 
-def train_ppo(train_env_id: str,
-              total_timesteps: int = 200_000,
-              device: str = "cpu",
-              n_envs: int = 1):
-
-    print(f"Creating training env: {train_env_id}")
-    vec_env = make_vec_env(train_env_id, n_envs=n_envs)
+def train_ppo(
+    train_env_id: str,
+    total_timesteps: int = 200_000,
+    device: str = "cpu",
+    n_envs: int = 1,
+    seed: int = 42,
+):
+    print(f"Creating PPO training environment: {train_env_id}")
+    vec_env = make_vec_env(train_env_id, n_envs=n_envs, seed=seed)
 
     print("Observation space:", vec_env.observation_space)
     print("Action space:", vec_env.action_space)
@@ -43,109 +43,170 @@ def train_ppo(train_env_id: str,
         vec_env,
         verbose=1,
         device=device,
+        seed=seed,
         tensorboard_log="./ppo_hopper_tb/",
     )
 
-    print(f"Starting PPO training for {total_timesteps} timesteps...")
-    model.learn(total_timesteps=total_timesteps)
-    print("Training finished.")
+    try:
+        print(f"Starting PPO training for {total_timesteps} timesteps...")
+        model.learn(total_timesteps=total_timesteps)
+        print("PPO training finished.")
+    except Exception:
+        vec_env.close()
+        raise
 
     return model
 
 
-def train_sac(train_env_id: str,
-              total_timesteps: int = 200_000,
-              device: str = "cpu",
-              n_envs: int = 1):
-
-    print(f"Creating training env for SAC: {train_env_id}")
-    vec_env = make_vec_env(train_env_id, n_envs=n_envs)
+def train_sac(
+    train_env_id: str,
+    total_timesteps: int = 200_000,
+    device: str = "cpu",
+    n_envs: int = 1,
+    seed: int = 42,
+    learning_rate: float | None = None,
+    batch_size: int | None = None,
+):
+    print(f"Creating SAC training environment: {train_env_id}")
+    vec_env = make_vec_env(train_env_id, n_envs=n_envs, seed=seed)
 
     print("Observation space:", vec_env.observation_space)
     print("Action space:", vec_env.action_space)
 
+    sac_kwargs = {}
+    if learning_rate is not None:
+        sac_kwargs["learning_rate"] = learning_rate
+    if batch_size is not None:
+        sac_kwargs["batch_size"] = batch_size
+
     model = SAC(
-    "MlpPolicy",
-    vec_env,
-    verbose=1,
-    device=device,
-    seed=42,        # ensure reproducibility
-    tensorboard_log="./sac_hopper_tb/",
-     )
+        "MlpPolicy",
+        vec_env,
+        verbose=1,
+        device=device,
+        seed=seed,
+        tensorboard_log="./sac_hopper_tb/",
+        **sac_kwargs,
+    )
 
-
-    print(f"Starting SAC training for {total_timesteps} timesteps...")
-    model.learn(total_timesteps=total_timesteps)
-    print("Training finished.")
+    try:
+        print(f"Starting SAC training for {total_timesteps} timesteps...")
+        model.learn(total_timesteps=total_timesteps)
+        print("SAC training finished.")
+    except Exception:
+        vec_env.close()
+        raise
 
     return model
 
 
 def evaluate_on_env(model, env_id: str, n_episodes: int = 50):
-    """Evaluate a trained model on the given environment."""
-    print(f"\nEvaluating policy on env: {env_id}")
-    eval_env = gym.make(env_id)
+    """Evaluate a trained model on a standard Gymnasium environment."""
+    print(f"\nEvaluating policy on environment: {env_id}")
+    eval_env = Monitor(gym.make(env_id))
 
-    mean_reward, std_reward = evaluate_policy(
-        model,
-        eval_env,
-        n_eval_episodes=n_episodes,
-        render=False,
-        deterministic=True,
-    )
+    try:
+        mean_reward, std_reward = evaluate_policy(
+            model,
+            eval_env,
+            n_eval_episodes=n_episodes,
+            render=False,
+            deterministic=True,
+        )
 
-    print(f"Eval on {env_id} over {n_episodes} episodes:")
-    print(f"  Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+        print(f"Evaluation over {n_episodes} episodes on {env_id}:")
+        print(f"  Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
 
-    return mean_reward, std_reward
+        return mean_reward, std_reward
+    finally:
+        eval_env.close()
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", type=str, default="ppo",
-                        help="RL algorithm: ppo or sac")
-    parser.add_argument("--train-env", type=str, default="CustomHopper-source-v0",
-                        help="Environment ID to train on.")
-    parser.add_argument("--test-env", type=str, default="CustomHopper-target-v0",
-                        help="Environment ID to test on.")
-    parser.add_argument("--total-timesteps", type=int, default=200_000,
-                        help="Number of training timesteps.")
-    parser.add_argument("--device", type=str, default="cpu",
-                        help="Device: cpu or cuda.")
+    parser = argparse.ArgumentParser(
+        description="Train and evaluate PPO or SAC on Custom Hopper."
+    )
+    parser.add_argument(
+        "--algo", type=str, default="ppo",
+        choices=("ppo", "sac"),
+        help="RL algorithm to train.",
+    )
+    parser.add_argument(
+        "--train-env", type=str, default="CustomHopper-source-v0",
+        help="Environment ID for training.",
+    )
+    parser.add_argument(
+        "--test-env", type=str, default="CustomHopper-target-v0",
+        help="Environment ID for transfer evaluation.",
+    )
+    parser.add_argument(
+        "--total-timesteps", type=int, default=200_000,
+        help="Total number of training timesteps.",
+    )
+    parser.add_argument(
+        "--device", type=str, default="cpu",
+        help="Training device, such as cpu or cuda.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42,
+        help="Random seed for training.",
+    )
+    parser.add_argument(
+        "--eval-episodes", type=int, default=50,
+        help="Number of episodes for each evaluation.",
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=None,
+        help="Optional SAC learning rate; omitted uses the SB3 default.",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=None,
+        help="Optional SAC batch size; omitted uses the SB3 default.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    algo = args.algo.lower()
 
-    # ---- 1. TRAIN ----
-    if algo == "ppo":
-        model = train_ppo(
-            train_env_id=args.train_env,
-            total_timesteps=args.total_timesteps,
-            device=args.device,
-            n_envs=1,
-        )
-    elif algo == "sac":
-        model = train_sac(
-            train_env_id=args.train_env,
-            total_timesteps=args.total_timesteps,
-            device=args.device,
-            n_envs=1,
-        )
-    else:
-        raise NotImplementedError("Supported algorithms: ppo, sac")
+    if args.total_timesteps <= 0:
+        raise ValueError("--total-timesteps must be greater than zero.")
+    if args.learning_rate is not None and args.learning_rate <= 0:
+        raise ValueError("--learning-rate must be greater than zero.")
+    if args.batch_size is not None and args.batch_size <= 0:
+        raise ValueError("--batch-size must be greater than zero.")
 
-   # ---- 2. SAVE MODEL ----
-    suffix = args.train_env.replace("CustomHopper-", "").replace("-v0", "")
-    save_name = f"{algo}_hopper_{suffix}"
+    trainers = {"ppo": train_ppo, "sac": train_sac}
+    trainer = trainers[args.algo]
+
+    trainer_kwargs = {}
+    if args.algo == "sac":
+        trainer_kwargs["learning_rate"] = args.learning_rate
+        trainer_kwargs["batch_size"] = args.batch_size
+
+    model = trainer(
+        train_env_id=args.train_env,
+        total_timesteps=args.total_timesteps,
+        device=args.device,
+        n_envs=1,
+        seed=args.seed,
+        **trainer_kwargs,
+    )
+
+    suffix = (
+        args.train_env.replace("CustomHopper-", "").replace("-v0", "")
+        or "default"
+    )
+    save_name = f"{args.algo}_hopper_{suffix}"
     print(f"\nSaving model to: {save_name}.zip")
     model.save(save_name)
 
-   # ---- 3. Evaluate on train and test envs ----
-    evaluate_on_env(model, args.train_env, n_episodes=10)
-    evaluate_on_env(model, args.test_env, n_episodes=10)
+    try:
+        evaluate_on_env(model, args.train_env, n_episodes=args.eval_episodes)
+        evaluate_on_env(model, args.test_env, n_episodes=args.eval_episodes)
+    finally:
+        if model.get_env() is not None:
+            model.get_env().close()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+﻿experiment,algorithm,train_env,test_env,total_timesteps,seed,learning_rate,batch_size,eval_episodes,source_mean_reward,source_std_reward,target_mean_reward,target_std_reward
+tuned_config_B,SAC,CustomHopper-source-v0,CustomHopper-target-v0,200000,42,0.0001,256,50,674.43,77.23,681.77,117.48

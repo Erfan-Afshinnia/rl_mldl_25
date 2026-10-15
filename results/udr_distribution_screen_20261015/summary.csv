@@ -1,0 +1,4 @@
+width_fraction,seed,train_steps,eval_episodes,learning_rate,batch_size,mean_target_reward,std_target_reward,mean_target_length,terminated,truncated,training_seconds,model_path
+0.1,42,50000,10,0.0003,256,142.38373020953492,221.81651601367895,55.0,10,0,873.25,results\udr_distribution_screen_20261015\sac_udr_pm10_seed42.zip
+0.3,42,50000,10,0.0003,256,382.4495199874282,39.05077619142623,130.5,10,0,860.19,results\udr_distribution_screen_20261015\sac_udr_pm30_seed42.zip
+0.5,42,50000,10,0.0003,256,354.5731387073897,1.8863264494541245,131.5,10,0,834.76,results\udr_distribution_screen_20261015\sac_udr_pm50_seed42.zip
